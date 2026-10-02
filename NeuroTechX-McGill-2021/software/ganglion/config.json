@@ -1,0 +1,9 @@
+{
+  "targets": [{"id": "A", "frequency": 10.0}, {"id": "B", "frequency": 12.0}, {"id": "C", "frequency": 15.0}],
+  "duration_seconds": 5.0,
+  "settle_seconds": 0.3,
+  "bandpass_hz": [7.0, 35.0],
+  "harmonics": 2,
+  "min_score": 0.35,
+  "min_margin": 0.08
+}

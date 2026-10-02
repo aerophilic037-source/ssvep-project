@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ganglion SSVEP</title><link rel="stylesheet" href="/static/style.css"></head>
+<body><main>
+<header><p class="eyebrow">OPENBCI · LOCAL EXPERIMENT</p><h1>Ganglion SSVEP</h1><p>연결 확인 → 바라볼 자극 선택 → 5초 측정</p></header>
+<section aria-labelledby="connection-title"><h2 id="connection-title">1. EEG 연결</h2>
+<div class="controls"><button id="scan">LSL 스트림 검색</button><select id="streams" aria-label="EEG 스트림"><option value="">먼저 검색하세요</option></select><button id="connect" disabled>연결</button><button id="disconnect">연결 해제</button></div>
+<p id="status" role="status">GUI에서 Ganglion → Networking → LSL / TimeSeries / EEG를 켜세요.</p></section>
+<section><h2>2. 사용할 채널과 정답</h2><p>후두부에 실제 연결한 채널만 선택하세요. CH1은 배열 인덱스 0입니다.</p>
+<div class="controls" id="settings"><label><input type="checkbox" name="channel" value="0" checked> CH1</label><label><input type="checkbox" name="channel" value="1"> CH2</label><label><input type="checkbox" name="channel" value="2"> CH3</label><label><input type="checkbox" name="channel" value="3"> CH4</label>
+<label>바라볼 자극 <select id="target"><option value="">자유 선택 (정답 없음)</option></select></label></div>
+<p>처음에는 A·B·C를 번갈아 선택하고 지정한 자극을 바라보세요. 연결된 전극 위치는 별도로 기록하세요.</p></section>
+<section><div class="controls"><h2>3. 자극 측정</h2><button id="start" disabled>5초 측정 시작</button><button id="stop" class="stop" disabled>즉시 중단 (Esc)</button><strong id="progress">대기</strong></div>
+<div id="targets" class="targets"></div><p>자극은 시작 버튼을 눌렀을 때만 깜빡입니다. 탭을 벗어나면 중단됩니다.</p></section>
+<section><h2>결과</h2><p id="message" role="alert">아직 측정하지 않았습니다.</p><div id="scores"></div><p id="details"></p><p id="saved"></p>
+<p class="muted">CCA 점수는 정답 확률이 아닙니다. 판정 기준은 초기 실험값이며 사용자별 검증이 필요합니다.</p>
+<table><thead><tr><th>회차</th><th>정답</th><th>예측</th><th>판정</th></tr></thead><tbody id="history"></tbody></table></section>
+</main><script src="/static/app.js"></script></body></html>
