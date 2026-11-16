@@ -1,5 +1,24 @@
 # Ganglion SSVEP 로컬 실행 안내
 
+## EEG가 실제로 잡히는지부터 확인하려면
+
+단계별 검증 환경을 먼저 사용하세요. 원시 품질 → 눈 뜸/감음 알파 → 화면 타이밍 →
+단일 SSVEP → 3지선다를 분리해 기록합니다. GUI 녹화 파일도 LSL 없이 읽을 수 있습니다.
+
+```bash
+bash software/ganglion/start_validation.sh
+# http://127.0.0.1:8002
+```
+
+- [아침 실험 안내서](docs/MORNING_GUIDE.html): 전극/REF/D_G, GUI 녹화법, 단계별 실행·실패 분기, 논문과 공식 자료
+- [기존 파일에서 확인한 문제](docs/EXISTING_RECORDINGS_FINDINGS.md): LSL 역전, 약 83 Hz 기록, 큰 신호 진폭
+- [검증 도구의 설계·검사·제한](docs/VALIDATION_TECHNICAL.md)
+- [공개 EEG 참고 그림과 해설](validation_reports/reference/index.html): 실제 눈 뜸/감음·SSVEP 예제 (사용자의 기록과 별도)
+- `validation_recordings/`: 새 실험 원시 NPZ·세션 JSON·오프라인 HTML 보고서 (Git 제외)
+- `validation_reports/audit/index.html`: 기존 GUI/SSVEP 파일 감사 보고서 (로컬 생성물, Git 제외)
+
+아래 안내는 기존 5초 SSVEP 앱에 해당합니다. 새 검증 앱의 실행 경로와 포트가 다릅니다.
+
 이 폴더는 OpenBCI Ganglion 4채널용 초기 SSVEP 실험 앱입니다.
 기존 Cyton speller와 별도의 실행 경로이며, DB·AWS·Node.js·언어 모델 없이 실행합니다.
 화면과 API를 Python 서버 하나가 제공합니다. 기존 React/Flask 실행 스크립트는 사용하지 않습니다.

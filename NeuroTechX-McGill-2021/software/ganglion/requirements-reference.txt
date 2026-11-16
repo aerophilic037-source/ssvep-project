@@ -1,0 +1,4 @@
+-r requirements-brainflow.txt
+# Optional public-data examples and scientific figures; not required by the app.
+mne==1.13.2
+matplotlib==3.11.2

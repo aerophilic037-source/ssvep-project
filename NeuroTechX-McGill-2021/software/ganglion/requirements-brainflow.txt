@@ -1,0 +1,3 @@
+# Optional isolation experiment; keep separate from the working LSL environment.
+-r requirements-lock.txt
+brainflow==5.24.0

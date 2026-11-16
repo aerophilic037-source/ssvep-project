@@ -3,6 +3,8 @@ node_modules
 
 # Local Ganglion recordings and native library downloads
 software/ganglion/recordings/
+software/ganglion/validation_recordings/
+software/ganglion/validation_reports/
 .env
 
 # Byte-compiled / optimized / DLL files
@@ -117,6 +119,7 @@ celerybeat.pid
 
 # Environments
 .venv
+.venv-brainflow-validation/
 env/
 venv/
 ENV/

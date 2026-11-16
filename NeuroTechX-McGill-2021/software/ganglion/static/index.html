@@ -3,7 +3,7 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ganglion SSVEP</title><link rel="stylesheet" href="/static/style.css"></head>
 <body><main>
-<header><p class="eyebrow">OPENBCI · LOCAL EXPERIMENT</p><h1>Ganglion SSVEP</h1><p>연결 확인 → 바라볼 자극 선택 → 5초 측정</p></header>
+<header><p class="eyebrow">OPENBCI · LOCAL EXPERIMENT</p><h1>Ganglion SSVEP</h1><p>연결 확인 → 바라볼 자극 선택 → 5초 측정</p><p>EEG 품질부터 확인하려면 <code>bash software/ganglion/start_validation.sh</code> 실행 후 <a href="http://127.0.0.1:8002">단계별 검증 화면</a>을 여세요.</p></header>
 <section aria-labelledby="connection-title"><h2 id="connection-title">1. EEG 연결</h2>
 <div class="controls"><button id="scan">LSL 스트림 검색</button><select id="streams" aria-label="EEG 스트림"><option value="">먼저 검색하세요</option></select><button id="connect" disabled>연결</button><button id="disconnect">연결 해제</button></div>
 <p id="status" role="status">GUI에서 Ganglion → Networking → LSL / TimeSeries / EEG를 켜세요.</p></section>

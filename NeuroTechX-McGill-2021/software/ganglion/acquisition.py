@@ -32,6 +32,10 @@ class Receiver:
         self.inlet = None
         self.info = None
         self.rows = deque(maxlen=30000)
+        # Diagnostic capture uses receipt order, never sorts/drops samples by a
+        # possibly non-monotonic producer timestamp. Legacy window() is unchanged.
+        self.records = deque(maxlen=120000)
+        self.sequence = 0
         self.error = None
         self.last_received = 0.0
 
@@ -70,8 +74,13 @@ class Receiver:
             while not self.stop_event.is_set():
                 samples, timestamps = inlet.pull_chunk(timeout=0.1, max_samples=1024)
                 if samples:
+                    received = lsl().local_clock()
                     with self.lock:
                         self.rows.extend((float(ts + correction), row) for ts, row in zip(timestamps, samples))
+                        for ts, row in zip(timestamps, samples):
+                            self.sequence += 1
+                            self.records.append((self.sequence, float(ts + correction),
+                                                 received, float(ts), row))
                         self.last_received = time.monotonic()
         except Exception as exc:
             self.error = str(exc)
@@ -83,6 +92,19 @@ class Receiver:
             rate = (len(recent) - 1) / (recent[-1] - recent[0]) if len(recent) > 1 and recent[-1] > recent[0] else None
         return {"connected": self.inlet is not None, "receiving": age < 1 and not self.error,
                 "stream": self.info, "measured_rate_hz": rate, "error": self.error}
+
+    def cursor(self):
+        with self.lock:
+            return self.sequence
+
+    def snapshot(self, after=None, seconds=10):
+        with self.lock:
+            if after is not None:
+                if self.records and after < self.records[0][0] - 1:
+                    raise ValueError("수신 버퍼 범위를 넘었습니다. 짧은 구간으로 다시 측정하세요.")
+                return [r for r in self.records if r[0] > after]
+            cutoff = self.records[-1][2] - seconds if self.records else 0
+            return [r for r in self.records if r[2] >= cutoff]
 
     def window(self, start, end):
         with self.lock:
@@ -99,5 +121,7 @@ class Receiver:
         self.inlet = self.info = self.thread = None
         with self.lock:
             self.rows.clear()
+            self.records.clear()
+            self.sequence = 0
         self.error = None
         self.last_received = 0.0
