@@ -8,7 +8,7 @@ import json
 import math
 
 import numpy as np
-from scipy.signal import butter, sosfiltfilt, welch
+from scipy.signal import butter, sosfiltfilt, welch, iirnotch, filtfilt
 
 from decoder import basis
 
@@ -133,7 +133,9 @@ def cca_scores(x, fs, targets=TARGETS):
 
 
 def analyze(samples, timestamps, fs=200.0, channels=None, arrivals=None,
-            elapsed=None, source="lsl", units="uV", include_plot=True):
+            elapsed=None, source="lsl", units="uV", include_plot=True, targets=TARGETS, notch_hz=None):
+    if notch_hz is not None and (not np.isfinite(notch_hz) or not 0 < notch_hz < fs / 2):
+        raise ValueError("노치 주파수는 0과 Nyquist 사이여야 합니다.")
     x = np.asarray(samples, float)
     if not np.isfinite(fs) or not 80 <= fs <= 1000:
         raise ValueError("샘플링 주파수는 80~1000 Hz 범위여야 합니다.")
@@ -152,7 +154,7 @@ def analyze(samples, timestamps, fs=200.0, channels=None, arrivals=None,
                        "alpha": "8–13 Hz inclusive bins; sum PSD × bin width",
                        "snr": "10 log10(target PSD / mean PSD of offsets −4,−3,−2,+2,+3,+4 bins)",
                        "amplitude": "1–40 Hz Butterworth order 4, forward/backward; standard deviation",
-                       "cca": "7–35 Hz, 10/12/15 Hz sine/cosine references, harmonics 1 and 2"},
+                       "cca": "7–35 Hz, candidate-frequency sine/cosine references, harmonics 1 and 2"},
            "channels": [], "selected_channels": channels, "input_units": units,
            "display_units": "uV" if units != "unknown" else "입력 단위",
            "spectral_axis": "nominal_sample_index", "spectral_valid": timing["ok"],
@@ -173,6 +175,15 @@ def analyze(samples, timestamps, fs=200.0, channels=None, arrivals=None,
     work[:, ~valid_columns] = 0
     f, p = welch(work, fs=fs, nperseg=min(int(4 * fs), len(work)), axis=0, detrend="constant", scaling="density")
     filtered = sosfiltfilt(butter(4, [1, min(40, fs / 2 - 1)], btype="bandpass", fs=fs, output="sos"), work, axis=0)
+    processed = work
+    post_p = p
+    if notch_hz is not None:
+        b, a = iirnotch(notch_hz, 30, fs=fs)
+        processed = filtfilt(b, a, work, axis=0)
+        _, post_p = welch(processed, fs=fs, nperseg=min(int(4 * fs), len(work)), axis=0, detrend="constant", scaling="density")
+        filtered = sosfiltfilt(butter(4, [1, min(40, fs / 2 - 1)], btype="bandpass", fs=fs, output="sos"), processed, axis=0)
+    out["methods"]["notch"] = {"frequency_hz": notch_hz, "Q": 30 if notch_hz else None, "phase": "forward/backward", "scope": "display and CCA; raw storage and PSD unchanged"}
+    post_line = np.maximum(band_power(f, post_p, 49, 51), band_power(f, post_p, 59, 61)) / np.maximum(band_power(f, post_p, 1, min(90, fs / 2 - 1)), 1e-30)
     alpha = band_power(f, p, 8, 13)
     broad = band_power(f, p, 1, min(90, fs / 2 - 1))
     line50 = band_power(f, p, 49, 51)
@@ -194,13 +205,17 @@ def analyze(samples, timestamps, fs=200.0, channels=None, arrivals=None,
         if rail is not None and rail > THRESHOLDS["near_rail_fraction"]:
             flags.append("입력 범위 근처 값: 포화 의심")
         if line_fraction > THRESHOLDS["line_power_fraction"]:
-            flags.append("50/60 Hz 성분 우세")
+            if notch_hz is None or post_line[ch] > THRESHOLDS["line_power_fraction"]:
+                flags.append("50/60 Hz 성분 우세")
+            else:
+                out["warnings"].append(f"CH{ch+1}: 원시 전원 잡음 우세, 노치 후 감소. 원시 신호 품질 개선을 뜻하지 않습니다.")
         peak_sel = (f >= 1) & (f <= min(90, fs / 2 - 1))
         out["channels"].append({"channel": ch, "selected": ch in channels, "flags": flags,
             "finite": bool(valid_columns[ch]), "mean_uv": float(np.mean(v)),
             "raw_std_uv": float(np.std(v)), "raw_ptp_uv": float(np.ptp(v)),
             "ac_rms_uv": rms, "flat_seconds": flat, "near_rail_fraction": rail,
-            "line_fraction": line_fraction, "alpha_power": float(alpha[ch]),
+            "line_fraction": line_fraction, "line_fraction_after_notch": float(post_line[ch]),
+            "line60_power_before": float(line60[ch]), "line60_power_after": float(band_power(f, post_p, 59, 61)[ch]), "alpha_power": float(alpha[ch]),
             "alpha_relative": float(alpha[ch] / max(band_power(f, p, 1, 40)[ch], 1e-30)),
             "peak_hz": float(f[peak_sel][np.argmax(p[peak_sel, ch])]),
             "snr_db": {k: val["snr_db"][ch] if val["snr_db"] is not None else None for k, val in spectrum_targets.items()}})
@@ -212,7 +227,7 @@ def analyze(samples, timestamps, fs=200.0, channels=None, arrivals=None,
         out["correlation"] = clean_json(corr)
         if np.max(np.abs(corr - np.eye(len(channels)))) > .98:
             out["warnings"].append("채널 상관 >0.98: 공통 잡음/REF/전극 연결을 확인하세요. 상관만으로 원인을 확정하지 않습니다.")
-    out["cca_scores_exploratory"] = cca_scores(work[:, channels], fs) if valid_columns[channels].all() else {}
+    out["cca_scores_exploratory"] = cca_scores(processed[:, channels], fs, targets) if valid_columns[channels].all() else {}
     out["frequency_resolution_hz"] = float(f[1] - f[0])
     if not out["spectral_valid"]:
         out["warnings"].append("시간축 미검증: 표시 주파수와 CCA는 설정 주파수를 가정한 참고값이며 생리 반응 판정에 사용하지 않습니다.")

@@ -45,14 +45,15 @@ def protocol(name, seed=20261114):
                     result.append({"condition": condition, "duration": 10, "frequency": float(f), "pair": pair,
                                    "cue": "정지된 사각형 중앙을 보세요." if condition == "baseline" else f"{f:g} Hz 사각형 중앙을 보세요. 불편하면 즉시 Esc를 누르세요."})
         return result
-    if name == "choice":
+    if name in {"choice", "choice2"}:
         rng = np.random.default_rng(seed)
         result = []
         for block in range(5):
-            order = rng.permutation(TARGETS).tolist() + [None]
+            candidates = [12., 15.] if name == "choice2" else TARGETS
+            order = rng.permutation(candidates).tolist() + [None]
             for f in order:
                 result.append({"condition": "choice" if f else "no_control", "duration": 6, "frequency": f,
-                               "pair": block, "cue": f"{f:g} Hz 표시를 바라보세요." if f else "깜빡이는 화면에서 시선을 떼고 옆의 정지된 물체를 보세요. 눈은 뜬 상태입니다."})
+                               "candidates": candidates, "pair": block, "cue": f"{f:g} Hz 표시를 바라보세요." if f else "깜빡이는 화면에서 시선을 떼고 옆의 정지된 물체를 보세요. 눈은 뜬 상태입니다."})
         return result
     raise ValueError("지원하지 않는 프로토콜입니다.")
 
@@ -73,14 +74,14 @@ def summarize(session):
                        "accuracy_all_attempts": correct / len(choices) if choices else None,
                        "accuracy_accepted": correct / len(accepted) if accepted else None,
                        "coverage": len(accepted) / len(choices) if choices else None,
-                       "binomial_p_one_sided": float(binomtest(correct, len(choices), 1 / 3, alternative="greater").pvalue) if choices else None,
+                       "binomial_p_one_sided": float(binomtest(correct, len(choices), 1 / 3, alternative="greater").pvalue) if choices and all(len(r.get("candidates", TARGETS)) == 3 for r in choices) else None,
                        "confusion": confusion, "no_control_attempts": len(controls),
                        "no_control_false_positives": sum(r.get("prediction") is not None for r in controls),
-                       "note": "전체 시도 정확도에는 보류/품질 실패를 오답으로 포함합니다. 무자극 대조는 세 자극을 켠 채 시선을 떼는 조건입니다. 소표본 p값은 탐색용이며 독립 시행을 가정합니다."}}
+                       "note": "전체 시도 정확도에는 보류/품질 실패를 오답으로 포함합니다. 시선 이탈 대조는 선택한 자극들을 켠 채 시선을 떼는 조건입니다. 소표본 p값은 탐색용이며 독립 시행을 가정합니다."}}
 
 
-def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None):
-    app = Flask(__name__, static_folder=str(ROOT / "validation_static"), static_url_path="/static")
+def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None, native=False):
+    app = Flask(__name__, static_folder=str(ROOT / ("native_static" if native else "validation_static")), static_url_path="/static")
     app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
     receiver = receiver or Receiver()
     folder = Path(output_dir or ROOT / "validation_recordings")
@@ -123,7 +124,7 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None):
         settle = 2.0 if trial["condition"] in {"eyes_open", "eyes_closed", "rest", "blink", "jaw"} else 1.0
         mask = arrivals >= trial["start_lsl"] + settle
         report = analyze(samples[mask], ts[mask], fs, setup["channels"], arrivals[mask],
-                         elapsed=max(0, elapsed - settle), units=setup["units"])
+                         elapsed=max(0, elapsed - settle), units=setup["units"], targets=trial.get("candidates", TARGETS), notch_hz=60 if native else None)
         if elapsed < trial["duration"] - .25 or elapsed > trial["duration"] + 2.5:
             report["eligible"] = False
             report["warnings"].append("구간 실제 시간이 예정과 다릅니다.")
@@ -137,6 +138,8 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None):
         flicker = trial["condition"] in {"single", "choice", "no_control"}
         valid = report["eligible"] and not aborted and (display["ok"] if flicker else True)
         scores = report.get("cca_scores_exploratory", {})
+        candidates = trial.get("candidates", TARGETS)
+        scores = {k: v for k, v in scores.items() if float(k) in candidates}
         ranked = sorted(scores, key=scores.get, reverse=True)
         prediction = None
         if valid and flicker and len(ranked) > 1:
@@ -237,7 +240,7 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None):
             return jsonify(waiting=True, count=len(rows))
         setup = state["session"]["setup"] if state["session"] else {"channels": [0], "units": "uV"}
         return jsonify(analyze([r[4] for r in rows], [r[1] for r in rows], fs,
-                               setup["channels"], [r[2] for r in rows], units=setup["units"]))
+                               setup["channels"], [r[2] for r in rows], units=setup["units"], notch_hz=60 if native else None))
 
     @app.post("/api/session")
     def new_session():
@@ -247,6 +250,8 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None):
             setup = request.get_json().get("setup", {})
             if not isinstance(setup, dict):
                 raise ValueError("설정 객체가 필요합니다.")
+            if native:
+                setup.update(units="uV", lsl_filters="off", acquisition="brainflow-native")
             channels = setup.get("channels")
             if not isinstance(channels, list) or not channels or any(type(c) is not int or c not in range(4) for c in channels) or len(set(channels)) != len(channels):
                 raise ValueError("실제 연결한 CH1~CH4를 선택하세요.")
@@ -284,11 +289,16 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None):
             pair = b.get("pair")
             if condition not in CONDITIONS or type(duration) not in (int, float) or not np.isfinite(duration) or not 5 <= duration <= 60:
                 raise ValueError("조건 또는 구간 길이(5~60초)가 잘못되었습니다.")
-            if condition in {"baseline", "single", "choice"} and frequency not in TARGETS:
-                raise ValueError("지원 주파수는 10/12/15 Hz입니다.")
+            if condition in {"baseline", "single", "choice"} and (type(frequency) not in (int, float) or not np.isfinite(frequency) or not 8 <= frequency <= 17.5 or (not native and frequency not in TARGETS)):
+                raise ValueError("지원 주파수는 8~17.5 Hz입니다.")
             if pair is not None and (type(pair) is not int or not 0 <= pair <= 999):
                 raise ValueError("pair는 0~999 정수입니다.")
-            trial = {"id": uuid4().hex, "condition": condition, "duration": duration,
+            candidates = b.get("candidates", TARGETS)
+            if not isinstance(candidates, list) or not 1 <= len(candidates) <= 20 or any(type(f) not in (int, float) or not np.isfinite(f) or not 8 <= f <= 17.5 or (not native and f not in TARGETS) for f in candidates) or len(set(candidates)) != len(candidates):
+                raise ValueError("잘못된 자극 후보입니다.")
+            if condition == "choice" and frequency not in candidates:
+                raise ValueError("정답이 자극 후보에 없습니다.")
+            trial = {"id": uuid4().hex, "candidates": candidates, "condition": condition, "duration": duration,
                      "frequency": float(frequency) if frequency else None, "pair": pair,
                      "cursor": receiver.cursor(), "start_lsl": now(), "stream": receiver.info}
             state["trial"] = trial

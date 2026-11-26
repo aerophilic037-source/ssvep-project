@@ -43,10 +43,10 @@ function renderSummary(parent,summary){
   parent.append(table(['채널','감음−뜸 중앙값 (dB)','각 쌍 변화','≥3 dB 쌍 수','반복 증가 근거'],a.channels.map(c=>[`CH${c.channel+1}`,fmt(c.median_change_db),c.pair_change_db.map(v=>fmt(v)).join(', '),c.supporting_pairs,c.repeatable_increase?'관찰됨':'미확인'])));parent.append(node('p',a.interpretation,'muted'));
   parent.append(node('h3','단일 자극 · 정지 화면 대조'));for(const c of summary.single.channels){if(!c.trials?.length)continue;parent.append(node('p',`CH${c.channel+1}`),table(['Hz','쌍','ON SNR','OFF SNR','차이 (dB)'],c.trials.map(t=>[t.frequency,t.pair+1,fmt(t.on_snr_db),fmt(t.off_snr_db),fmt(t.change_db)])));}
   parent.append(node('p',summary.single.interpretation,'muted'));
-  const q=summary.choice;parent.append(node('h3','3지선다 · 보류와 대조 조건 포함'));
+  const q=summary.choice;parent.append(node('h3','다중 자극 · 보류와 대조 조건 포함'));
   parent.append(node('p',`정답 ${q.correct}/${q.attempted} · 전체 정확도 ${q.accuracy_all_attempts===null?'—':fmt(q.accuracy_all_attempts*100,1)+'%'} · 채택 ${q.accepted}/${q.attempted} · 품질/시간 실패 ${q.invalid} · 채택된 시도 정확도 ${q.accuracy_accepted===null?'—':fmt(q.accuracy_accepted*100,1)+'%'} · 시선 이탈 오탐 ${q.no_control_false_positives}/${q.no_control_attempts}`));
   parent.append(table(['정답 → 예측','10 Hz','12 Hz','15 Hz','보류'],Object.entries(q.confusion).map(([f,row])=>[f,...['10.0','12.0','15.0','None'].map(p=>row[p])])));
-  parent.append(node('p',`우연 수준 1/3 대비 단측 이항 p=${fmt(q.binomial_p_one_sided,4)}. ${q.note}`,'muted'));
+  parent.append(node('p',`3개 후보만 사용한 경우의 우연 수준 1/3 대비 p=${fmt(q.binomial_p_one_sided,4)}. ${q.note}`,'muted'));
 }
 function renderReport(parent,payload){
   parent.replaceChildren();
