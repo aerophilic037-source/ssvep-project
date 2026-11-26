@@ -15,6 +15,7 @@ import numpy as np
 from scipy.stats import binomtest
 
 from acquisition import Receiver, lsl
+import personal_experiment
 from validation import analyze, clean_json, compare_trials, display_metrics, dumps, TARGETS, THRESHOLDS
 from validation_io import write_report, analyze_recording
 
@@ -59,14 +60,15 @@ def protocol(name, seed=20261114):
 
 
 def summarize(session):
-    records = session["trials"]
+    records = [t for t in session["trials"] if not t.get("personal")]
     choices = [r for r in records if r["condition"] == "choice" and not r.get("aborted")]
     controls = [r for r in records if r["condition"] == "no_control" and not r.get("aborted")]
     accepted = [r for r in choices if r.get("prediction") is not None]
     correct = sum(r.get("prediction") == r.get("frequency") for r in choices)
-    confusion = {str(f): {str(p): 0 for p in TARGETS + [None]} for f in TARGETS}
+    frequencies = sorted(set(TARGETS + [float(r["frequency"]) for r in choices] + [float(r["prediction"]) for r in choices if r.get("prediction") is not None]))
+    confusion = {str(f): {str(p): 0 for p in frequencies + [None]} for f in frequencies}
     for r in choices:
-        confusion[str(r["frequency"])][str(r.get("prediction"))] += 1
+        confusion[str(float(r["frequency"]))][str(float(r["prediction"])) if r.get("prediction") is not None else "None"] += 1
     return {"alpha": compare_trials(records, "alpha", session["setup"]["channels"]),
             "single": compare_trials(records, "single", session["setup"]["channels"]),
             "choice": {"attempted": len(choices), "accepted": len(accepted), "correct": correct,
@@ -104,6 +106,7 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None, native=
         tmp.replace(dest / "session.json")
         write_report(dest / "report.tmp", session)
         (dest / "report.tmp").replace(dest / "report.html")
+        personal_experiment.write_personal_report(session, dest)
 
     def finish(frames=None, aborted=False, reason=""):
         trial = state["trial"]
@@ -154,6 +157,7 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None, native=
         dest.mkdir(parents=True, exist_ok=True)
         name = f"{len(state['session']['trials']) + 1:03d}_{trial['condition']}_{trial['id']}.npz"
         completed["recording"] = name
+        personal_experiment.complete(state["session"], completed, samples, ts, dest)
         # Saving is part of completion; do not clear state before a successful write.
         np.savez_compressed(dest / name, samples=samples, timestamps=ts,
                             arrival_timestamps=arrivals,
@@ -301,6 +305,9 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None, native=
             trial = {"id": uuid4().hex, "candidates": candidates, "condition": condition, "duration": duration,
                      "frequency": float(frequency) if frequency else None, "pair": pair,
                      "cursor": receiver.cursor(), "start_lsl": now(), "stream": receiver.info}
+            personal = personal_experiment.validate_start(state["session"], b)
+            if personal:
+                trial["personal"] = personal
             state["trial"] = trial
 
             def timeout():
@@ -392,7 +399,7 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None, native=
     def file(session_id, filename):
         if not re.fullmatch(r"\d{8}T\d{6}Z_[a-f0-9]{12}", session_id) or not re.fullmatch(r"[a-zA-Z0-9_.-]+", filename):
             raise ValueError("잘못된 파일 이름입니다.")
-        if filename not in {"session.json", "report.html"} and not filename.endswith(".npz"):
+        if filename not in {"session.json", "report.html", "personal_report.html", "personal_results.json"} and not filename.endswith(".npz"):
             raise ValueError("지원하지 않는 파일입니다.")
         return send_from_directory(folder / session_id, filename, as_attachment=filename.endswith(".npz"))
 
@@ -406,6 +413,7 @@ def create_app(receiver=None, output_dir=None, clock=None, gui_dir=None, native=
             raise ValueError("지원하지 않는 보고서 경로입니다.")
         return send_from_directory(ROOT / "validation_reports" / category, filename)
 
+    personal_experiment.register(app, state, lock, folder, now, persist, native)
     return app
 
 

@@ -3,3 +3,5 @@
 #stimulus-stage{min-height:360px}#stimulus-overlay{max-width:calc(100% - 150px);line-height:1.4}#stage-stop{display:none;position:absolute;top:14px;right:14px;z-index:2}#stimulus-stage:fullscreen #stage-stop{display:block}#stage-progress{position:absolute;bottom:14px;right:16px;color:#eee;font-variant-numeric:tabular-nums}
 
 #stimuli.many-targets{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:35px 18px;width:95%;padding:75px 0 55px}.many-targets .stimulus{width:100%;height:75px}.many-targets .stimulus .label{bottom:-28px}
+
+.personal-mode .stimulus{width:150px;height:150px}.personal-preview{display:flex;gap:40px;justify-content:center;margin:24px 0}.personal-preview .stimulus{font-size:20px}

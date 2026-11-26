@@ -199,3 +199,69 @@ GANGLION_LSL_TEST=1 .venv/bin/python -m unittest discover -s software/ganglion -
 
 ## 추가 맞춤 선택 실험
 서버 실행 후 `http://127.0.0.1:8004/?mode=custom`에서 후보 2~20개(8~17.5 Hz), 목표 또는 무작위 목표, 횟수(기본 10), 시간을 설정합니다. 새 세션을 만들고 화면 검사·자극 확인 후 시작합니다. 20개 예시는 0.5 Hz 간격의 탐색 구성으로 성능을 보장하지 않습니다. 완료 회차의 보류·품질 실패를 오답으로 포함한 정확도와 회차별 예측을 표시합니다. 상세 결과는 native_recordings 세션 보고서에 저장됩니다. 이번 실행 표는 페이지를 새로 열면 초기화됩니다.
+
+## FBCCA 녹화본 재분석
+
+`fbcca.py`는 200 Hz에 맞춘 오프라인 FBCCA입니다. 실시간 Native 앱은 기존 CCA를 유지합니다.
+5개 중첩 Chebyshev-I 대역(하한 6/14/22/30/38, 상한 90 Hz), 5개 고조파,
+가중치 `m**(-1.25)+0.25`와 CCA 상관 제곱합을 사용합니다. 상단 저지대역은
+200 Hz의 Nyquist를 피하도록 원 참고 구현의 100 Hz에서 95 Hz로 조정했습니다.
+원 기록을 수정하지 않고 두 알고리즘에 같은 구간·채널·60 Hz 노치를 적용합니다.
+보류 없는 최고 점수 선택 비교이며 FBCCA에는 기존 CCA 문턱을 적용하지 않습니다.
+단일 자극 결과는 다중 선택 정확도가 아니고, 시선 이탈에는 별도 거절 기준이 필요합니다.
+
+```bash
+.venv-brainflow-validation/bin/python software/ganglion/compare_fbcca.py \
+  software/ganglion/native_recordings/20261126T112331Z_7530b4be641c \
+  software/ganglion/native_recordings/20261126T115655Z_311b029f6a04 \
+  --out software/ganglion/validation_reports/fbcca_comparison
+open software/ganglion/validation_reports/fbcca_comparison/index.html
+```
+
+출력: HTML 보고서, 회차별 CSV, 설정·대역별 상관·원본 SHA256을 포함한 JSON.
+
+## 개인 보정 → 고정 모델 → 독립 평가
+
+`bash software/ganglion/start_native.sh` 실행 후
+`http://127.0.0.1:8004/?mode=personal`을 엽니다. 실제 REF/D_G와 채널 위치를
+입력하여 새 세션을 만들고, 정지된 150 CSS px 사각형의 한 변(cm)과 시청 거리,
+조명 조건을 기록합니다. 기존 전극/화면 조건을 보정·평가 동안 유지하세요.
+
+1. 실험 준비 → 화면 타이밍 검사 → 자극 확인란 선택.
+2. 보정 시작: 12 Hz/15 Hz/시선 이탈 각 15회(총 45회), 블록마다 무작위 순서.
+   한 번에 최대 15회 후 멈추므로 쉬고 같은 버튼으로 이어서 진행합니다.
+3. 학습·모델 고정: 보정 데이터만으로 15개 블록을 하나씩 제외한 교차검증,
+   목표당 3/5/10/14회 학습 곡선, 필터뱅크 eTRCA 및 4항 eCCA 비교.
+   교차검증 점수로 거절 문턱을 보정합니다. 문턱 최적화 결과는 독립 성능이 아닙니다.
+4. 독립 평가: 새 45회. 두 모델과 문턱을 고정하고, 다시 학습할 수 없습니다.
+   평가의 중단/품질 실패는 시도 분모에 남고 재시도하지 않습니다.
+   보정 실패는 원 기록을 보존한 채 같은 슬롯을 다시 수집합니다.
+5. 서버 재시작 후 같은 조건이라면 세션 ID로 복구합니다. 배치가 바뀌면 새 세션입니다.
+
+자극 6초, 준비 5초. 분석은 자극 첫 rAF 프레임 후 1~5초의 4초입니다.
+5회 왕복 시계 측정 중 최소 RTT의 중간점을 사용하고 추정 오차 >10 ms이면 차단합니다.
+BLE producer timestamp와 샘플 인덱스의 선형회귀로 균등 시계를 재구성한 다음
+200 Hz로 보간합니다. 추정 196~204 Hz, 회귀 RMS <=25 ms, 최대 공백 <=150 ms를
+작업 기준으로 사용하며 외삽은 허용하지 않습니다. 원시 시각/데이터는 그대로 보존합니다.
+이 기준은 연구용 시작 기준으로 검증된 동기화 정확도가 아닙니다. 광출력 시각,
+ADC 시계 및 패킷 누락을 직접 검증한 것으로 해석하면 안 됩니다.
+화면 크기/DPR/자극 CSS 크기가 바뀌면 시작 마커를 거절합니다.
+
+학습 모델: 60 Hz Q30 노치, 6/14/22~90 Hz 3개 Chebyshev-I 대역,
+가중치 m^-1.25+0.25. eTRCA는 채널 공분산에 trace-scaled 1e-6 ridge를 적용하고
+목표별 공간필터를 결합합니다. eCCA는 X-Y, X-template(공동 CCA), X-template(X-Y
+필터), X-template(template-Y 필터)의 네 상관을 부호 보존 제곱합으로 결합합니다.
+템플릿이나 문턱에 평가 데이터를 넣지 않습니다. 시선 이탈은 주파수 클래스가 아니라
+거절 보정 자료입니다. 보정 OOF 시선 이탈 오선택 <=1/15인 문턱 후보 중
+목표의 정답 채택 수 - 오답 채택 수가 가장 큰 조합을 선택합니다.
+
+`native_recordings/<session>/`에 원시 NPZ, `session.json`, `personal_model.json`,
+`personal_results.json`, `personal_report.html`을 저장합니다. 모델 SHA256과 학습
+시행 ID를 기록하며 평가 시 모델 무결성을 확인합니다. 기존 일반 보고서의 CCA 통계와
+개인 실험 통계를 섞지 않습니다. 브라우저 표는 전체 정확도, 보류, 오선택, 품질 실패,
+유효 시선 이탈의 오선택 수를 따로 표시합니다.
+
+검증 명령:
+```bash
+.venv-brainflow-validation/bin/python -m unittest discover -s software/ganglion -p 'test_personal.py'
+```
